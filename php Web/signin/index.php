@@ -1,13 +1,13 @@
 <?php
 session_start();
 
-// Redirect to dashboard if already logged in
+
 if (isset($_SESSION['user']) && !empty($_SESSION['user'])) {
     header('Location: /dash');
     exit();
 }
 
-// Handle login submission
+
 $loginError = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email']);
@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $loginError = 'User database not found!';
     } else {
         $file = fopen($csvFile, 'r');
-        fgetcsv($file); // skip header
+        fgetcsv($file); 
         while (($data = fgetcsv($file)) !== false) {
             if (strcasecmp($data[1], $email) === 0 && $data[2] === $password) {
                 $_SESSION['user'] = $data[1];
