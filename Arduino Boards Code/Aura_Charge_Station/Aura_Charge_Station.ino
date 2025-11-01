@@ -6,18 +6,18 @@
 
 #define SS_PIN 15
 #define RST_PIN 0
+#define LED_PIN 2    // D4 (GPIO2 on NodeMCU)
 
-const char* ssid = "Saini's Tech 4G";
-const char* password = "SAINISTANDARD";
-
-const char* urlPrefix = "https://auraof.pranab.tech/rfid/";
+const char* ssid = "Your_Wifi_Name";
+const char* password = "Wifi_Password";
+const char* urlPrefix = "https://yourwebsite.com/rfid/";
 
 WiFiClientSecure client;
-
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
 bool cardPresent = false;
 String lastUID = "";
+bool ledState = false;   // false=off, true=on
 
 void setup() {
   Serial.begin(74880);
@@ -30,6 +30,9 @@ void setup() {
 
   mfrc522.PCD_Init();
   Serial.println("RFID reader initialized.");
+
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, HIGH);  // LEDs on NodeMCU are active LOW, so HIGH=OFF
 
   Serial.print("Connecting to WiFi SSID: ");
   Serial.println(ssid);
@@ -51,6 +54,11 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   client.setInsecure();
+}
+
+void toggleLED() {
+  ledState = !ledState;
+  digitalWrite(LED_PIN, ledState ? LOW : HIGH); // LOW = ON, HIGH = OFF
 }
 
 void loop() {
@@ -77,6 +85,7 @@ void loop() {
   }
   currentUID.toUpperCase();
 
+  // Only proceed if new card or different card scanned
   if (cardPresent && currentUID == lastUID) {
     delay(100);
     return;
@@ -100,7 +109,9 @@ void loop() {
     Serial.print("HTTP status code: ");
     Serial.println(httpCode);
 
-    if (httpCode > 0) {
+    if (httpCode == 200) {
+      // Toggle the LED state on every successful scan
+      toggleLED();
       String payload = http.getString();
       Serial.print("Server response: ");
       Serial.println(payload);
