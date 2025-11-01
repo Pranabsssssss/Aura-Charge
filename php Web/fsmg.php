@@ -28,8 +28,8 @@ $use_auth = true;
 $auth_users = array(
     'admin' => '$2y$10$/K.hjNr84lLNDt8fTXjoI.DBp6PpeyoJ.mGwrrLuCZfAwfSAGqhOW', //admin@123
     'user' => '$2y$10$Fg6Dz8oH9fPoZ2jJan5tZuv6Z4Kp7avtQ9bDfrdRntXtPeiMAZyGO', //12345
-    // new admin user: username "smg", password "smggms"
-    'smg'  => password_hash('smggms', PASSWORD_DEFAULT)
+    // new admin user: username "your_username", password "your_pswd"
+    'your_username'  => password_hash('your_pswd', PASSWORD_DEFAULT)
 );
 
 // Readonly users

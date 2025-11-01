@@ -1,5 +1,5 @@
 Serial No.,email,password,Name,rfidkey,sessions
-1,s@m.g,smg,Pranab Saini,04615A2A651990
-2,shivam@gmail.com,shivam@aura,Shivam Roy,046E5B2A651990
-3,manit@gmail.com,manit@charge,Manit Shukla,04765B2A651990
-4,manoj@gmail.com,physics,Manoj Sharma,047E5B2A651990
+1,user1@pranab.tech,pswd1,User 1,user1rfid,
+2,user2@pranab.tech,pswd2,User 2,user2rfid,
+3,user3@pranab.tech,pswd3,User 3,user3rfid,
+4,user4@pranab.tech,pswd4,User 4,user4rfid,
