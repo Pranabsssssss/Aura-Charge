@@ -1,128 +1,159 @@
-#include <ESP8266WiFi.h>
-#include <WiFiClientSecure.h>
-#include <SPI.h>
-#include <MFRC522.h>
-#include <ESP8266HTTPClient.h>
+#include <Adafruit_Fingerprint.h>
+#include <SoftwareSerial.h>
 
-#define SS_PIN 15
-#define RST_PIN 0
-#define LED_PIN 2    // D4 (GPIO2 on NodeMCU)
+// SoftwareSerial pins for NodeMCU D5 (TX), D6 (RX)
+SoftwareSerial mySerial(D5, D6);
 
-const char* ssid = "Your_Wifi_Name";
-const char* password = "Wifi_Password";
-const char* urlPrefix = "https://yourwebsite.com/rfid/";
+Adafruit_Fingerprint finger(&mySerial);
 
-WiFiClientSecure client;
-MFRC522 mfrc522(SS_PIN, RST_PIN);
-
-bool cardPresent = false;
-String lastUID = "";
-bool ledState = false;   // false=off, true=on
+const int maxFingerprints = 5;
+int enrolledCount = 0;
 
 void setup() {
-  Serial.begin(74880);
-  delay(10);
+  Serial.begin(9600);
+  while (!Serial);
+  delay(100);
+  Serial.println("\nFingerprint Sensor Auto Enrollment with Duplicate Check");
 
-  Serial.println();
-  Serial.println("Starting NodeMCU RFID reader...");
+  mySerial.begin(57600);
+  finger.begin(57600);
 
-  SPI.begin();
-
-  mfrc522.PCD_Init();
-  Serial.println("RFID reader initialized.");
-
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, HIGH);  // LEDs on NodeMCU are active LOW, so HIGH=OFF
-
-  Serial.print("Connecting to WiFi SSID: ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-    if (attempts > 40) {
-      Serial.println();
-      Serial.println("Failed to connect to WiFi, restarting...");
-      ESP.restart();
-    }
+  if (!finger.verifyPassword()) {
+    Serial.println("Fingerprint sensor not found!");
+    while (1) delay(1);
   }
-  Serial.println();
-  Serial.print("WiFi connected! IP address: ");
-  Serial.println(WiFi.localIP());
+  Serial.println("Sensor found!");
 
-  client.setInsecure();
-}
+  finger.getTemplateCount();
+  enrolledCount = finger.templateCount;
+  Serial.print("Currently stored fingerprints: ");
+  Serial.println(enrolledCount);
 
-void toggleLED() {
-  ledState = !ledState;
-  digitalWrite(LED_PIN, ledState ? LOW : HIGH); // LOW = ON, HIGH = OFF
+  if (enrolledCount < maxFingerprints) {
+    Serial.print("Enroll new fingerprints up to ID ");
+    Serial.println(maxFingerprints);
+  } else {
+    Serial.println("Fingerprint database full. Starting identification.");
+  }
 }
 
 void loop() {
-  if (!mfrc522.PICC_IsNewCardPresent()) {
-    if (cardPresent) {
-      Serial.println("Card removed");
-      cardPresent = false;
-      lastUID = "";
-    }
-    delay(100);
-    return;
-  }
-
-  if (!mfrc522.PICC_ReadCardSerial()) {
-    Serial.println("Failed to read card serial");
-    delay(100);
-    return;
-  }
-
-  String currentUID = "";
-  for (byte i = 0; i < mfrc522.uid.size; i++) {
-    if(mfrc522.uid.uidByte[i] < 0x10) currentUID += "0";
-    currentUID += String(mfrc522.uid.uidByte[i], HEX);
-  }
-  currentUID.toUpperCase();
-
-  // Only proceed if new card or different card scanned
-  if (cardPresent && currentUID == lastUID) {
-    delay(100);
-    return;
-  }
-
-  cardPresent = true;
-  lastUID = currentUID;
-
-  Serial.print("Card detected with UID: ");
-  Serial.println(currentUID);
-
-  String url = String(urlPrefix) + "?rfidkey=" + currentUID + "-Dwarka_Sec_10";
-  Serial.print("Sending HTTP GET request to: ");
-  Serial.println(url);
-
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    http.begin(client, url);
-
-    int httpCode = http.GET();
-    Serial.print("HTTP status code: ");
-    Serial.println(httpCode);
-
-    if (httpCode == 200) {
-      // Toggle the LED state on every successful scan
-      toggleLED();
-      String payload = http.getString();
-      Serial.print("Server response: ");
-      Serial.println(payload);
+  if (enrolledCount < maxFingerprints) {
+    Serial.print("Place finger to enroll ID ");
+    Serial.println(enrolledCount + 1);
+    if (enrollFingerprintNoDuplicates(enrolledCount + 1) == FINGERPRINT_OK) {
+      Serial.println("Fingerprint enrolled successfully!\n");
+      enrolledCount++;
     } else {
-      Serial.print("GET request failed, error: ");
-      Serial.println(http.errorToString(httpCode).c_str());
+      Serial.println("Enrollment failed or duplicate detected, try again.\n");
     }
-    http.end();
   } else {
-    Serial.println("WiFi not connected - cannot send HTTP request.");
+    Serial.println("Place finger to identify...");
+    int id = getFingerprintID();
+    if (id != 0) {
+      Serial.print("Fingerprint matched! ID: ");
+      Serial.println(id);
+    } else {
+      Serial.println("No match found.");
+    }
+    delay(2000); // Pause before next scan
+  }
+}
+
+uint8_t enrollFingerprintNoDuplicates(uint8_t id) {
+  int p;
+
+  Serial.println("Waiting to detect finger...");
+
+  // Capture first image
+  while ((p = finger.getImage()) != FINGERPRINT_OK) {
+    if (p == FINGERPRINT_NOFINGER) delay(100);
+    else {
+      Serial.println("Error: Unable to capture image.");
+      return p;
+    }
+  }
+  Serial.println("Image taken");
+
+  // Convert image to characteristics (slot #1)
+  p = finger.image2Tz(1);
+  if (p != FINGERPRINT_OK) {
+    Serial.println("Error: Unable to convert image.");
+    return p;
   }
 
-  delay(500);
+  // Perform search to detect duplicate fingerprint
+  p = finger.fingerFastSearch();
+  if (p == FINGERPRINT_OK) {
+    Serial.print("Duplicate detected! This fingerprint is already enrolled with ID: ");
+    Serial.println(finger.fingerID);
+    return p; // Abort duplicate enrollment
+  }
+
+  Serial.println("No duplicate found. Proceeding with enrollment...");
+  delay(1000);
+
+  // Capture image again for enrollment (slot #1)
+  while ((p = finger.getImage()) != FINGERPRINT_OK) {
+    if (p == FINGERPRINT_NOFINGER) delay(100);
+    else {
+      Serial.println("Error: Unable to capture image for enrollment.");
+      return p;
+    }
+  }
+  Serial.println("Image taken");
+  p = finger.image2Tz(1);
+  if (p != FINGERPRINT_OK) {
+    Serial.println("Error: Unable to convert image for enrollment.");
+    return p;
+  }
+
+  Serial.println("Remove finger");
+  delay(2000);
+
+  Serial.println("Place the same finger again");
+  // Capture second image (slot #2)
+  while ((p = finger.getImage()) != FINGERPRINT_OK) {
+    if (p == FINGERPRINT_NOFINGER) delay(100);
+    else {
+      Serial.println("Error: Unable to capture second image.");
+      return p;
+    }
+  }
+  Serial.println("Image taken");
+  p = finger.image2Tz(2);
+  if (p != FINGERPRINT_OK) {
+    Serial.println("Error: Unable to convert second image.");
+    return p;
+  }
+
+  // Create fingerprint model from both images
+  p = finger.createModel();
+  if (p != FINGERPRINT_OK) {
+    Serial.println("Error: Fingerprints did not match.");
+    return p;
+  }
+
+  // Store model with given ID
+  p = finger.storeModel(id);
+  if (p == FINGERPRINT_OK) {
+    Serial.println("Stored new fingerprint!");
+    return FINGERPRINT_OK;
+  } else {
+    Serial.println("Failed to store fingerprint.");
+    return p;
+  }
+}
+
+uint8_t getFingerprintID() {
+  uint8_t p = finger.getImage();
+  if (p != FINGERPRINT_OK) return 0;
+
+  p = finger.image2Tz();
+  if (p != FINGERPRINT_OK) return 0;
+
+  p = finger.fingerFastSearch();
+  if (p != FINGERPRINT_OK) return 0;
+
+  return finger.fingerID;
 }
